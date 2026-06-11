@@ -2,6 +2,14 @@ import type { KitPricing, Product } from "@/types";
 
 export const DEFAULT_PRODUCTS: Product[] = [
   {
+    id: "body-wash",
+    name: "Shower Gel / Body Wash",
+    quantity: "150ml",
+    wholesalePrice: 145,
+    retailPrice: 200,
+    category: "body",
+  },
+  {
     id: "shampoo",
     name: "Shampoo",
     quantity: "180ml",
@@ -80,14 +88,6 @@ export const DEFAULT_PRODUCTS: Product[] = [
     wholesalePrice: 115,
     retailPrice: 220,
     category: "sun",
-  },
-  {
-    id: "body-wash",
-    name: "Shower Gel / Body Wash",
-    quantity: "150ml",
-    wholesalePrice: 145,
-    retailPrice: 200,
-    category: "body",
   },
 ];
 

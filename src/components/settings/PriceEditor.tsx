@@ -1,5 +1,6 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import SaveIcon from "@mui/icons-material/Save";
 import Alert from "@mui/material/Alert";
@@ -15,119 +16,67 @@ import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { useCallback, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 import { useProducts } from "@/context/ProductContext";
 import {
-  parsePriceInput,
-  validatePrice,
-  validateRetailVsWholesale,
-} from "@/lib/validation";
+  priceFormSchema,
+  type PriceFormInput,
+  type PriceFormValues,
+} from "@/lib/priceFormSchema";
+
+function buildDefaultValues(
+  products: ReturnType<typeof useProducts>["products"],
+  kitPricing: ReturnType<typeof useProducts>["kitPricing"],
+): PriceFormValues {
+  return {
+    wholesaleKitPrice: kitPricing.wholesaleKitPrice,
+    retailKitPrice: kitPricing.retailKitPrice,
+    products: products.map((p) => ({
+      id: p.id,
+      name: p.name,
+      quantity: p.quantity,
+      wholesalePrice: p.wholesalePrice,
+      retailPrice: p.retailPrice,
+    })),
+  };
+}
 
 export default function PriceEditor() {
-  const {
-    products,
-    kitPricing,
-    updateProductPrice,
-    updateKitPrice,
-    resetToDefaults,
-  } = useProducts();
+  const { products, kitPricing, saveAllPrices, resetToDefaults } =
+    useProducts();
   const [saved, setSaved] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const setError = useCallback((key: string, message?: string) => {
-    setErrors((prev) => {
-      const next = { ...prev };
-      if (message) next[key] = message;
-      else delete next[key];
-      return next;
-    });
-  }, []);
+  const {
+    control,
+    handleSubmit,
+    reset,
+    formState: { errors, isDirty, isSubmitting },
+  } = useForm<PriceFormInput, unknown, PriceFormValues>({
+    resolver: zodResolver(priceFormSchema),
+    defaultValues: buildDefaultValues(products, kitPricing),
+    mode: "onBlur",
+  });
 
-  const hasErrors = useMemo(() => Object.keys(errors).length > 0, [errors]);
+  useEffect(() => {
+    reset(buildDefaultValues(products, kitPricing));
+  }, [products, kitPricing, reset]);
 
-  const handleProductPrice = (
-    productId: string,
-    field: "wholesalePrice" | "retailPrice",
-    raw: string,
-  ) => {
-    const key = `${productId}-${field}`;
-    const parsed = parsePriceInput(raw);
-    if (parsed === null) {
-      setError(key, "Enter a valid whole number");
-      return;
-    }
-
-    const check = validatePrice(parsed);
-    if (!check.valid) {
-      setError(key, check.error);
-      return;
-    }
-
-    const product = products.find((p) => p.id === productId);
-    if (!product) return;
-
-    const wholesale =
-      field === "wholesalePrice" ? parsed : product.wholesalePrice;
-    const retail = field === "retailPrice" ? parsed : product.retailPrice;
-    const pairCheck = validateRetailVsWholesale(wholesale, retail);
-    if (!pairCheck.valid) {
-      setError(key, pairCheck.error);
-      return;
-    }
-
-    setError(key);
-    setError(`${productId}-wholesalePrice`);
-    setError(`${productId}-retailPrice`);
-    updateProductPrice(productId, field, parsed);
+  const onSubmit = (values: PriceFormValues) => {
+    saveAllPrices(values);
+    reset(values);
+    setSaved(true);
   };
 
-  const handleKitPrice = (
-    field: "wholesaleKitPrice" | "retailKitPrice",
-    raw: string,
-  ) => {
-    const key = `kit-${field}`;
-    const parsed = parsePriceInput(raw);
-    if (parsed === null) {
-      setError(key, "Enter a valid whole number");
-      return;
-    }
-
-    const check = validatePrice(parsed);
-    if (!check.valid) {
-      setError(key, check.error);
-      return;
-    }
-
-    const wholesale =
-      field === "wholesaleKitPrice" ? parsed : kitPricing.wholesaleKitPrice;
-    const retail =
-      field === "retailKitPrice" ? parsed : kitPricing.retailKitPrice;
-    const pairCheck = validateRetailVsWholesale(wholesale, retail);
-    if (!pairCheck.valid) {
-      setError(key, pairCheck.error);
-      return;
-    }
-
-    setError(key);
-    setError("kit-wholesaleKitPrice");
-    setError("kit-retailKitPrice");
-    updateKitPrice(field, parsed);
-  };
-
-  const getFieldError = (key: string) => errors[key];
+  const productErrors = errors.products;
 
   return (
-    <Box>
+    <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
       <Alert severity="info" sx={{ mb: 3, borderRadius: 2 }}>
-        Prices save automatically in your browser. Retail must be equal to or
-        higher than wholesale. Changes apply instantly in the order calculator.
+        Edit prices below and click <strong>Save Prices</strong>. Retail must
+        be equal to or higher than wholesale. Changes apply to the order
+        calculator after saving.
       </Alert>
-
-      {hasErrors && (
-        <Alert severity="warning" sx={{ mb: 3, borderRadius: 2 }}>
-          Please fix validation errors before saving.
-        </Alert>
-      )}
 
       <Paper
         elevation={0}
@@ -149,28 +98,47 @@ export default function PriceEditor() {
             Complete Kit Bundle Prices
           </Typography>
         </Box>
-        <Box sx={{ p: 3, display: "flex", gap: 3, flexWrap: "wrap" }}>
-          <TextField
-            label="Wholesale Kit Price (₹)"
-            type="number"
-            value={kitPricing.wholesaleKitPrice}
-            onChange={(e) =>
-              handleKitPrice("wholesaleKitPrice", e.target.value)
-            }
-            error={Boolean(getFieldError("kit-wholesaleKitPrice"))}
-            helperText={getFieldError("kit-wholesaleKitPrice")}
-            slotProps={{ htmlInput: { min: 0, step: 1 } }}
-            sx={{ minWidth: { xs: "100%", sm: 220 } }}
+        <Box
+          sx={{
+            p: 3,
+            display: "grid",
+            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+            gap: 3,
+          }}
+        >
+          <Controller
+            name="wholesaleKitPrice"
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                label="Wholesale Kit Price (₹)"
+                type="number"
+                value={field.value}
+                onChange={(e) => field.onChange(e.target.value)}
+                error={Boolean(errors.wholesaleKitPrice)}
+                helperText={errors.wholesaleKitPrice?.message}
+                slotProps={{ htmlInput: { min: 0, step: 1 } }}
+                fullWidth
+              />
+            )}
           />
-          <TextField
-            label="Retail Kit Price (₹)"
-            type="number"
-            value={kitPricing.retailKitPrice}
-            onChange={(e) => handleKitPrice("retailKitPrice", e.target.value)}
-            error={Boolean(getFieldError("kit-retailKitPrice"))}
-            helperText={getFieldError("kit-retailKitPrice")}
-            slotProps={{ htmlInput: { min: 0, step: 1 } }}
-            sx={{ minWidth: { xs: "100%", sm: 220 } }}
+          <Controller
+            name="retailKitPrice"
+            control={control}
+            render={({ field }) => (
+              <TextField
+                {...field}
+                label="Retail Kit Price (₹)"
+                type="number"
+                value={field.value}
+                onChange={(e) => field.onChange(e.target.value)}
+                error={Boolean(errors.retailKitPrice)}
+                helperText={errors.retailKitPrice?.message}
+                slotProps={{ htmlInput: { min: 0, step: 1 } }}
+                fullWidth
+              />
+            )}
           />
         </Box>
       </Paper>
@@ -210,71 +178,74 @@ export default function PriceEditor() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {products.map((product, index) => (
-                <TableRow
-                  key={product.id}
-                  sx={{
-                    backgroundColor: index % 2 === 0 ? "#fff" : "#FAF8F5",
-                  }}
-                >
-                  <TableCell>
-                    <Typography sx={{ fontWeight: 600 }}>
-                      {product.name}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>{product.quantity}</TableCell>
-                  <TableCell align="right">
-                    <TextField
-                      type="number"
-                      size="small"
-                      value={product.wholesalePrice}
-                      onChange={(e) =>
-                        handleProductPrice(
-                          product.id,
-                          "wholesalePrice",
-                          e.target.value,
-                        )
-                      }
-                      error={Boolean(
-                        getFieldError(`${product.id}-wholesalePrice`),
-                      )}
-                      helperText={getFieldError(`${product.id}-wholesalePrice`)}
-                      slotProps={{
-                        htmlInput: {
-                          min: 0,
-                          step: 1,
-                          style: { textAlign: "right" },
-                        },
-                      }}
-                      sx={{ width: { xs: 100, sm: 120 } }}
-                    />
-                  </TableCell>
-                  <TableCell align="right">
-                    <TextField
-                      type="number"
-                      size="small"
-                      value={product.retailPrice}
-                      onChange={(e) =>
-                        handleProductPrice(
-                          product.id,
-                          "retailPrice",
-                          e.target.value,
-                        )
-                      }
-                      error={Boolean(getFieldError(`${product.id}-retailPrice`))}
-                      helperText={getFieldError(`${product.id}-retailPrice`)}
-                      slotProps={{
-                        htmlInput: {
-                          min: 0,
-                          step: 1,
-                          style: { textAlign: "right" },
-                        },
-                      }}
-                      sx={{ width: { xs: 100, sm: 120 } }}
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
+              {products.map((product, index) => {
+                const rowError = productErrors?.[index];
+                return (
+                  <TableRow
+                    key={product.id}
+                    sx={{
+                      backgroundColor: index % 2 === 0 ? "#fff" : "#FAF8F5",
+                    }}
+                  >
+                    <TableCell>
+                      <Typography sx={{ fontWeight: 600 }}>
+                        {product.name}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>{product.quantity}</TableCell>
+                    <TableCell align="right">
+                      <Controller
+                        name={`products.${index}.wholesalePrice`}
+                        control={control}
+                        render={({ field }) => (
+                          <TextField
+                            {...field}
+                            type="number"
+                            size="small"
+                            value={field.value}
+                            onChange={(e) => field.onChange(e.target.value)}
+                            error={Boolean(rowError?.wholesalePrice)}
+                            helperText={rowError?.wholesalePrice?.message}
+                            slotProps={{
+                              htmlInput: {
+                                min: 0,
+                                step: 1,
+                                style: { textAlign: "right" },
+                              },
+                            }}
+                            sx={{ width: { xs: 100, sm: 130 } }}
+                          />
+                        )}
+                      />
+                    </TableCell>
+                    <TableCell align="right">
+                      <Controller
+                        name={`products.${index}.retailPrice`}
+                        control={control}
+                        render={({ field }) => (
+                          <TextField
+                            {...field}
+                            type="number"
+                            size="small"
+                            value={field.value}
+                            onChange={(e) => field.onChange(e.target.value)}
+                            error={Boolean(rowError?.retailPrice)}
+                            helperText={rowError?.retailPrice?.message}
+                            slotProps={{
+                              htmlInput: {
+                                min: 0,
+                                step: 1,
+                                style: { textAlign: "right" },
+                              },
+                            }}
+                            sx={{ width: { xs: 100, sm: 130 } }}
+                          />
+                        )}
+                      />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </Box>
@@ -290,6 +261,7 @@ export default function PriceEditor() {
         }}
       >
         <Button
+          type="button"
           variant="outlined"
           color="warning"
           startIcon={<RestartAltIcon />}
@@ -300,7 +272,6 @@ export default function PriceEditor() {
               )
             ) {
               resetToDefaults();
-              setErrors({});
               setSaved(true);
             }
           }}
@@ -308,13 +279,13 @@ export default function PriceEditor() {
           Reset to Defaults
         </Button>
         <Button
+          type="submit"
           variant="contained"
           color="primary"
           startIcon={<SaveIcon />}
-          disabled={hasErrors}
-          onClick={() => setSaved(true)}
+          disabled={isSubmitting || !isDirty}
         >
-          Prices Saved
+          Save Prices
         </Button>
       </Box>
 
@@ -322,7 +293,7 @@ export default function PriceEditor() {
         open={saved}
         autoHideDuration={3000}
         onClose={() => setSaved(false)}
-        message="Prices updated successfully"
+        message="Prices saved successfully"
       />
     </Box>
   );

@@ -15,6 +15,7 @@ import {
   DEFAULT_KIT_PRICING,
   DEFAULT_PRODUCTS,
 } from "@/data/defaultProducts";
+import type { PriceFormValues } from "@/lib/priceFormSchema";
 import type {
   KitPricing,
   PriceOverrides,
@@ -27,6 +28,7 @@ const CART_STORAGE_KEY = "merimo-cart-session";
 
 interface SessionCart {
   quantities: Record<string, number>;
+  kitCount: number;
   pricingMode: PricingMode;
 }
 
@@ -35,20 +37,16 @@ interface ProductContextValue {
   kitPricing: KitPricing;
   pricingMode: PricingMode;
   quantities: Record<string, number>;
+  kitCount: number;
   cartItemCount: number;
   setPricingMode: (mode: PricingMode) => void;
   setQuantity: (productId: string, quantity: number) => void;
+  setKitCount: (count: number) => void;
+  removeProduct: (productId: string) => void;
+  removeKit: () => void;
   addCompleteKit: () => void;
   clearCart: () => void;
-  updateProductPrice: (
-    productId: string,
-    field: "wholesalePrice" | "retailPrice",
-    value: number,
-  ) => void;
-  updateKitPrice: (
-    field: "wholesaleKitPrice" | "retailKitPrice",
-    value: number,
-  ) => void;
+  saveAllPrices: (values: PriceFormValues) => void;
   resetToDefaults: () => void;
 }
 
@@ -132,14 +130,23 @@ function readSessionCart(): SessionCart | null {
   }
 }
 
-function writeSessionCart(quantities: Record<string, number>, mode: PricingMode) {
-  const hasItems = Object.values(quantities).some((q) => q > 0);
+function writeSessionCart(
+  quantities: Record<string, number>,
+  kitCount: number,
+  mode: PricingMode,
+) {
+  const hasItems =
+    kitCount > 0 || Object.values(quantities).some((q) => q > 0);
   if (!hasItems) {
     sessionStorage.removeItem(CART_STORAGE_KEY);
     return;
   }
-  const payload: SessionCart = { quantities, pricingMode: mode };
+  const payload: SessionCart = { quantities, kitCount, pricingMode: mode };
   sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(payload));
+}
+
+function clampQty(value: number): number {
+  return Math.max(0, Math.min(999, Math.floor(value) || 0));
 }
 
 export function ProductProvider({ children }: { children: React.ReactNode }) {
@@ -149,6 +156,7 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
     useState<KitPricing>(DEFAULT_KIT_PRICING);
   const [pricingMode, setPricingModeState] = useState<PricingMode>("retail");
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [kitCount, setKitCountState] = useState(0);
   const [hydrated, setHydrated] = useState(false);
   const prevPathRef = useRef<string | null>(null);
 
@@ -173,6 +181,7 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
       const sessionCart = readSessionCart();
       if (sessionCart) {
         setQuantities(sessionCart.quantities);
+        setKitCountState(sessionCart.kitCount ?? 0);
         setPricingModeState(sessionCart.pricingMode);
       }
     } else {
@@ -184,13 +193,14 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) return;
-    writeSessionCart(quantities, pricingMode);
-  }, [quantities, pricingMode, hydrated]);
+    writeSessionCart(quantities, kitCount, pricingMode);
+  }, [quantities, kitCount, pricingMode, hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
     if (prevPathRef.current && prevPathRef.current !== pathname) {
       setQuantities({});
+      setKitCountState(0);
       sessionStorage.removeItem(CART_STORAGE_KEY);
     }
     prevPathRef.current = pathname;
@@ -212,13 +222,15 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
 
   const clearCart = useCallback(() => {
     setQuantities({});
+    setKitCountState(0);
     sessionStorage.removeItem(CART_STORAGE_KEY);
   }, []);
 
   const setPricingMode = useCallback(
     (mode: PricingMode) => {
       if (mode === pricingMode) return;
-      const hasItems = Object.values(quantities).some((q) => q > 0);
+      const hasItems =
+        kitCount > 0 || Object.values(quantities).some((q) => q > 0);
       if (hasItems) {
         const confirmed = window.confirm(
           "Switching pricing type will clear your current order. Continue?",
@@ -228,59 +240,62 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
       clearCart();
       setPricingModeState(mode);
     },
-    [pricingMode, quantities, clearCart],
+    [pricingMode, quantities, kitCount, clearCart],
   );
 
   const setQuantity = useCallback((productId: string, quantity: number) => {
-    const safeQty = Math.max(0, Math.min(999, Math.floor(quantity) || 0));
+    const safeQty = clampQty(quantity);
     setQuantities((prev) => ({
       ...prev,
       [productId]: safeQty,
     }));
   }, []);
 
-  const addCompleteKit = useCallback(() => {
+  const setKitCount = useCallback((count: number) => {
+    setKitCountState(clampQty(count));
+  }, []);
+
+  const removeProduct = useCallback((productId: string) => {
     setQuantities((prev) => {
       const next = { ...prev };
-      for (const p of products) {
-        next[p.id] = (prev[p.id] ?? 0) + 1;
-      }
+      delete next[productId];
       return next;
     });
-  }, [products]);
+  }, []);
 
-  const updateProductPrice = useCallback(
-    (
-      productId: string,
-      field: "wholesalePrice" | "retailPrice",
-      value: number,
-    ) => {
-      setProducts((prev) => {
-        const next = prev.map((p) =>
-          p.id === productId ? { ...p, [field]: Math.max(0, value) } : p,
-        );
-        setKitPricing((kit) => {
-          persist(next, kit);
-          return kit;
-        });
-        return next;
-      });
-    },
-    [persist],
-  );
+  const removeKit = useCallback(() => {
+    setKitCountState(0);
+  }, []);
 
-  const updateKitPrice = useCallback(
-    (field: "wholesaleKitPrice" | "retailKitPrice", value: number) => {
-      setKitPricing((prev) => {
-        const next = { ...prev, [field]: Math.max(0, value) };
-        setProducts((prods) => {
-          persist(prods, next);
-          return prods;
-        });
-        return next;
+  const addCompleteKit = useCallback(() => {
+    setKitCountState((prev) => clampQty(prev + 1));
+  }, []);
+
+  const saveAllPrices = useCallback(
+    (values: PriceFormValues) => {
+      const nextProducts: Product[] = values.products.map((row) => {
+        const existing = products.find((p) => p.id === row.id);
+        return {
+          id: row.id,
+          name: row.name,
+          quantity: row.quantity,
+          wholesalePrice: row.wholesalePrice,
+          retailPrice: row.retailPrice,
+          category:
+            existing?.category ??
+            DEFAULT_PRODUCTS.find((d) => d.id === row.id)?.category ??
+            "face",
+        };
       });
+      const nextKit: KitPricing = {
+        wholesaleKitPrice: values.wholesaleKitPrice,
+        retailKitPrice: values.retailKitPrice,
+      };
+      setProducts(nextProducts);
+      setKitPricing(nextKit);
+      persist(nextProducts, nextKit);
     },
-    [persist],
+    [products, persist],
   );
 
   const resetToDefaults = useCallback(() => {
@@ -290,10 +305,10 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(PRICE_STORAGE_KEY);
   }, [clearCart]);
 
-  const cartItemCount = useMemo(
-    () => Object.values(quantities).reduce((sum, q) => sum + q, 0),
-    [quantities],
-  );
+  const cartItemCount = useMemo(() => {
+    const individual = Object.values(quantities).reduce((sum, q) => sum + q, 0);
+    return individual + kitCount * products.length;
+  }, [quantities, kitCount, products.length]);
 
   const value = useMemo(
     () => ({
@@ -301,13 +316,16 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
       kitPricing,
       pricingMode,
       quantities,
+      kitCount,
       cartItemCount,
       setPricingMode,
       setQuantity,
+      setKitCount,
+      removeProduct,
+      removeKit,
       addCompleteKit,
       clearCart,
-      updateProductPrice,
-      updateKitPrice,
+      saveAllPrices,
       resetToDefaults,
     }),
     [
@@ -315,13 +333,16 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
       kitPricing,
       pricingMode,
       quantities,
+      kitCount,
       cartItemCount,
       setPricingMode,
       setQuantity,
+      setKitCount,
+      removeProduct,
+      removeKit,
       addCompleteKit,
       clearCart,
-      updateProductPrice,
-      updateKitPrice,
+      saveAllPrices,
       resetToDefaults,
     ],
   );

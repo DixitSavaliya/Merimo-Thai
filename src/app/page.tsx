@@ -61,9 +61,10 @@ export default function HomePage() {
                   Select Products
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Choose quantities for each product. When all 11 items are
-                  included, the complete kit discount applies automatically.
-                  Switching tabs or refreshing clears your order.
+                  Add products individually at unit price, or use{" "}
+                  <strong>Add Complete Kit</strong> for the discounted bundle
+                  price. Manage quantities and remove items from the invoice
+                  panel on the right.
                 </Typography>
               </Box>
 

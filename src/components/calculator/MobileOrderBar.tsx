@@ -10,12 +10,19 @@ import { useProducts } from "@/context/ProductContext";
 import { calculateOrder, formatINR } from "@/lib/pricing";
 
 export default function MobileOrderBar() {
-  const { products, kitPricing, pricingMode, quantities, cartItemCount } =
-    useProducts();
+  const {
+    products,
+    kitPricing,
+    pricingMode,
+    quantities,
+    kitCount,
+    cartItemCount,
+  } = useProducts();
 
   const breakdown = useMemo(
-    () => calculateOrder(products, quantities, pricingMode, kitPricing),
-    [products, quantities, pricingMode, kitPricing],
+    () =>
+      calculateOrder(products, quantities, kitCount, pricingMode, kitPricing),
+    [products, quantities, kitCount, pricingMode, kitPricing],
   );
 
   if (cartItemCount === 0) return null;
