@@ -14,8 +14,8 @@ interface CartQuantityControlsProps {
   onRemove: () => void;
   min?: number;
   max?: number;
-  /** Compact layout for narrow table cells */
-  compact?: boolean;
+  /** Stretch to full container width (desktop cart rows) */
+  fullWidth?: boolean;
 }
 
 export default function CartQuantityControls({
@@ -24,111 +24,122 @@ export default function CartQuantityControls({
   onRemove,
   min = 0,
   max = 999,
-  compact = false,
+  fullWidth = false,
 }: CartQuantityControlsProps) {
   const clamp = (val: number) =>
     Math.max(min, Math.min(max, Math.floor(val) || 0));
 
   return (
     <Box
+      role="group"
+      aria-label="Cart item controls"
       sx={{
         display: "flex",
-        flexDirection: compact ? "column" : "row",
         alignItems: "center",
-        justifyContent: "center",
-        gap: compact ? 0.75 : 0.25,
-        width: "100%",
-        mx: "auto",
+        justifyContent: fullWidth ? "space-between" : "center",
+        gap: 0.5,
+        width: fullWidth ? "100%" : "auto",
+        maxWidth: "100%",
+        flexWrap: "wrap",
       }}
     >
       <Box
         sx={{
-          display: "flex",
+          display: "inline-flex",
           alignItems: "center",
-          justifyContent: "center",
-          gap: 0.25,
+          gap: 0.5,
+          flex: fullWidth ? 1 : "none",
+          justifyContent: fullWidth ? "center" : "flex-start",
+          minWidth: 0,
         }}
       >
-        {!compact && (
-          <Tooltip title="Remove item">
-            <IconButton
-              size="small"
-              color="error"
-              onClick={onRemove}
-              aria-label="Remove item"
-              sx={{ mr: 0.25 }}
-            >
-              <DeleteIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </Tooltip>
-        )}
         <IconButton
           size="small"
           onClick={() => onChange(clamp(quantity - 1))}
           disabled={quantity <= min}
           aria-label="Decrease quantity"
-          sx={{
-            border: "1px solid",
-            borderColor: "divider",
-            width: 32,
-            height: 32,
-          }}
+          sx={btnSx}
         >
-          <RemoveIcon sx={{ fontSize: 18 }} />
+          <RemoveIcon sx={{ fontSize: 17 }} />
         </IconButton>
+
         <TextField
           value={quantity}
           onChange={(e) => {
-            const parsed = parseInt(e.target.value, 10);
-            onChange(clamp(isNaN(parsed) ? 0 : parsed));
+            const val = parseInt(e.target.value, 10);
+            onChange(isNaN(val) ? min : clamp(val));
           }}
           size="small"
+          aria-label="Quantity"
           slotProps={{
             htmlInput: {
               min,
               max,
-              "aria-label": "Quantity",
+              inputMode: "numeric",
               style: {
                 textAlign: "center",
-                width: compact ? 28 : 32,
                 padding: "6px 2px",
+                fontWeight: 700,
+                fontSize: "0.875rem",
               },
             },
           }}
           sx={{
-            width: compact ? 48 : 52,
+            width: 48,
+            flexShrink: 0,
             "& .MuiOutlinedInput-root": {
               borderRadius: 1.5,
+              backgroundColor: "#fff",
+              "& fieldset": { borderColor: "primary.main", borderWidth: 1.5 },
+              "&:hover fieldset": { borderColor: "primary.dark" },
+              "&.Mui-focused fieldset": { borderColor: "primary.main" },
             },
           }}
         />
+
         <IconButton
           size="small"
           onClick={() => onChange(clamp(quantity + 1))}
           disabled={quantity >= max}
           aria-label="Increase quantity"
-          sx={{
-            border: "1px solid",
-            borderColor: "divider",
-            width: 32,
-            height: 32,
-          }}
+          sx={btnSx}
         >
-          <AddIcon sx={{ fontSize: 18 }} />
+          <AddIcon sx={{ fontSize: 17 }} />
         </IconButton>
       </Box>
-      {compact && (
-        <Tooltip title="Remove item">
-          <IconButton
-            size="small"
-            color="error"
-            onClick={onRemove}
-            aria-label="Remove item"
-          >
-            <DeleteIcon sx={{ fontSize: 18 }} />
-          </IconButton>
-        </Tooltip>
-      )}
+
+      <Tooltip title="Remove from cart">
+        <IconButton
+          size="small"
+          onClick={onRemove}
+          aria-label="Remove from cart"
+          sx={{
+            ...btnSx,
+            borderColor: "error.light",
+            color: "error.main",
+            backgroundColor: "rgba(211,47,47,0.06)",
+            flexShrink: 0,
+            "&:hover": {
+              backgroundColor: "error.main",
+              color: "#fff",
+              borderColor: "error.main",
+            },
+          }}
+        >
+          <DeleteIcon sx={{ fontSize: 18 }} />
+        </IconButton>
+      </Tooltip>
     </Box>
   );
 }
+
+const btnSx = {
+  border: "1.5px solid",
+  borderColor: "primary.main",
+  width: 34,
+  height: 34,
+  color: "secondary.main",
+  backgroundColor: "#fff",
+  "&:hover": { backgroundColor: "rgba(201,162,39,0.12)" },
+  "&.Mui-disabled": { opacity: 0.35, borderColor: "divider" },
+};
